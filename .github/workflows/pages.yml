@@ -27,9 +27,9 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
-        # The site does not exist until the first deployment. This step
-        # cannot create it with the job token, so let deploy-pages continue.
-        continue-on-error: true
+        with:
+          # Create the Pages site (build type: workflow) on the first run.
+          enablement: true
 
       - name: Upload site artifact
         uses: actions/upload-pages-artifact@v3
