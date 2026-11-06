@@ -1008,3 +1008,74 @@ body.is-spatial .sheet::-webkit-scrollbar-thumb {
   background: rgba(23, 61, 50, 0.35);
   border-radius: 6px;
 }
+
+/* Scene 15 only: source versus discussion, large type, sheet scrolls. */
+.critique .reflect {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+}
+
+.critique .lede {
+  margin: 0;
+  padding: 8px 16px;
+  background: rgba(73, 137, 111, 0.14);
+}
+
+.compare-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 22px;
+  margin-top: 8px;
+  align-items: start;
+}
+
+.compare-col {
+  min-width: 0;
+  padding: 8px 14px 2px 0;
+  border-top: 3px solid var(--green);
+}
+
+.compare-col.is-ours {
+  padding-left: 14px;
+  border-left: 1px solid rgba(23, 61, 50, 0.16);
+  border-top-color: #173d32;
+}
+
+.compare-col p {
+  overflow-wrap: anywhere;
+}
+
+.cmp-label {
+  margin: 0 0 6px;
+  font-family: "Noto Sans CJK SC", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--green);
+}
+
+.compare-col.is-ours .cmp-label { color: #173d32; }
+
+.cmp-no {
+  color: var(--green);
+  font-variant-numeric: tabular-nums;
+  margin-right: 0.2em;
+}
+
+.critique .closing { margin-top: 8px; }
+
+body.is-spatial .sheet .cmp-label {
+  font-size: 28px;
+  line-height: 1.3;
+  letter-spacing: 0.12em;
+}
+
+@media (max-width: 980px) {
+  .compare-pair { grid-template-columns: 1fr; }
+  .compare-col.is-ours {
+    padding-left: 0;
+    border-left: none;
+    margin-top: 8px;
+  }
+}
