@@ -22,6 +22,7 @@ try {
   world.setReduced(reduced);
   world.start();
 } catch (err) {
+  console.error(err && err.stack ? err.stack : err);
   document.body.classList.add("no-webgl");
 }
 
