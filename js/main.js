@@ -93,14 +93,52 @@ document.addEventListener("touchend", (event) => {
   go(index + (dx < 0 ? 1 : -1));
 }, { passive: true });
 
+function wheelPixels(event, view) {
+  if (event.deltaMode === 1) return event.deltaY * 16;
+  if (event.deltaMode === 2) return event.deltaY * view;
+  return event.deltaY;
+}
+
+function canScroll(el, deltaY) {
+  if (!el || el.scrollHeight <= el.clientHeight + 8) return false;
+  const atTop = el.scrollTop <= 0;
+  const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+  if (deltaY < 0) return !atTop;
+  if (deltaY > 0) return !atBottom;
+  return false;
+}
+
+function planeUnderPointer(x, y) {
+  const nodes = document.querySelectorAll(".plane.is-scroll");
+  for (let i = 0; i < nodes.length; i += 1) {
+    const el = nodes[i];
+    const cs = getComputedStyle(el);
+    if (cs.visibility === "hidden" || cs.pointerEvents === "none" || parseFloat(cs.opacity) < 0.04) continue;
+    const box = el.getBoundingClientRect();
+    if (box.height < 8 || box.width < 8) continue;
+    if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) return el;
+  }
+  return null;
+}
+
 let wheelLock = 0;
 window.addEventListener("wheel", (event) => {
-  const sheet = event.target.closest && event.target.closest(".plane.is-scroll, .sheet");
-  if (sheet && sheet.scrollHeight > sheet.clientHeight + 8) {
-    const atTop = sheet.scrollTop <= 0;
-    const atBottom = sheet.scrollTop + sheet.clientHeight >= sheet.scrollHeight - 2;
-    const goingUp = event.deltaY < 0;
-    if ((goingUp && !atTop) || (!goingUp && !atBottom)) return;
+  const proxy = event.target.closest && event.target.closest(".scroll-proxy");
+  if (proxy && canScroll(proxy, event.deltaY)) return;
+  const sheet = planeUnderPointer(event.clientX, event.clientY)
+    || (event.target.closest && event.target.closest(".plane.is-scroll, .sheet"));
+  if (canScroll(sheet, event.deltaY)) {
+    const box = sheet.getBoundingClientRect();
+    const scale = box.height > 1 ? box.height / sheet.clientHeight : 1;
+    sheet.scrollTop += wheelPixels(event, sheet.clientHeight) / Math.max(0.05, scale);
+    const twin = document.querySelector('.scroll-proxy[data-scene="' + sheet.dataset.scene + '"]');
+    if (twin) {
+      const maxPlane = sheet.scrollHeight - sheet.clientHeight;
+      const maxProxy = twin.scrollHeight - twin.clientHeight;
+      if (maxPlane > 0 && maxProxy > 0) twin.scrollTop = (sheet.scrollTop / maxPlane) * maxProxy;
+    }
+    event.preventDefault();
+    return;
   }
   if (Math.abs(event.deltaY) < 12) return;
   event.preventDefault();
@@ -160,7 +198,7 @@ function go(next) {
   scenes.forEach((scene) => scene.classList.remove("is-active"));
   scenes[index].classList.remove("is-exit");
   scenes[index].classList.add("is-active");
-  document.querySelectorAll(".plane.is-scroll, .sheet").forEach((sheet) => {
+  document.querySelectorAll(".plane.is-scroll, .sheet, .scroll-proxy").forEach((sheet) => {
     sheet.scrollTop = 0;
   });
   document.body.classList.add("is-moving");

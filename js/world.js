@@ -320,6 +320,26 @@ export function createWorld(canvas) {
     });
     sheet.style.display = "none";
 
+    let scrollProxy = null;
+    const scrollPlane = planes.find((p) => p.scroll);
+    if (scrollPlane) {
+      scrollProxy = document.createElement("div");
+      scrollProxy.className = "scroll-proxy";
+      scrollProxy.dataset.scene = String(i);
+      scrollProxy.setAttribute("aria-hidden", "true");
+      const inner = document.createElement("div");
+      inner.className = "scroll-proxy-inner";
+      scrollProxy.appendChild(inner);
+      scrollPlane.el.dataset.scene = String(i);
+      scrollProxy.addEventListener("scroll", () => {
+        const maxProxy = scrollProxy.scrollHeight - scrollProxy.clientHeight;
+        const maxPlane = scrollPlane.el.scrollHeight - scrollPlane.el.clientHeight;
+        const next = maxProxy > 1 ? (scrollProxy.scrollTop / maxProxy) * maxPlane : 0;
+        scrollPlane.el.scrollTop = next;
+      }, { passive: true });
+      document.body.appendChild(scrollProxy);
+    }
+
     const plateObj = new CSS3DObject(plate);
     const rig = new THREE.Group();
     planes.forEach((p) => rig.add(p.obj));
@@ -337,6 +357,8 @@ export function createWorld(canvas) {
       plateH: frameH,
       portrait: fit.portrait,
       side: PHOTO_SIDE[i],
+      scrollProxy,
+      scrollPlane: scrollPlane ? scrollPlane.el : null,
       fit: 1,
       layoutScale: 0.01,
       fade: i === 0 ? 1 : 0
@@ -550,7 +572,32 @@ export function createWorld(canvas) {
       card.plate.style.visibility = on ? "visible" : "hidden";
       card.plate.style.opacity = String(fade);
       card.plate.style.pointerEvents = "none";
+      if (card.scrollProxy) placeScrollProxy(card.scrollProxy, card.scrollPlane, on && interactive && i === shown);
     });
+  }
+
+  function placeScrollProxy(proxy, planeEl, show) {
+    if (!show) {
+      proxy.style.display = "none";
+      return;
+    }
+    const box = planeEl.getBoundingClientRect();
+    if (box.width < 8 || box.height < 8) {
+      proxy.style.display = "none";
+      return;
+    }
+    proxy.style.display = "block";
+    proxy.style.left = box.left + "px";
+    proxy.style.top = box.top + "px";
+    proxy.style.width = box.width + "px";
+    proxy.style.height = box.height + "px";
+    const inner = proxy.firstElementChild;
+    const scale = box.height / Math.max(1, planeEl.clientHeight);
+    const innerH = Math.round(Math.max(box.height + 1, planeEl.scrollHeight * scale));
+    if (inner.dataset.h !== String(innerH)) {
+      inner.dataset.h = String(innerH);
+      inner.style.height = innerH + "px";
+    }
   }
 
   function blurFrom(source) {

@@ -1246,9 +1246,31 @@ body.is-spatial .plane-title .thanks-title {
 .plane-scroll .cmp-label { font-size: 18px; letter-spacing: 0.16em; }
 .plane-scroll p { font-size: 24px; line-height: 1.48; }
 .plane-scroll .closing { font-size: 24px; margin-top: 8px; }
-.plane.is-scroll { padding-right: 18px; }
-.plane.is-scroll::-webkit-scrollbar { width: 10px; }
-.plane.is-scroll::-webkit-scrollbar-thumb {
-  background: rgba(23, 61, 50, 0.35);
+.plane.is-scroll {
+  padding: 18px 26px 32px 22px;
+}
+.plane-scroll .cmp-no,
+.plane-scroll .cmp-label,
+.plane-scroll h3 {
+  line-height: 1.45;
+}
+.plane-scroll [data-focus="take"] {
+  padding-bottom: 8px;
+}
+.plane.is-scroll { scrollbar-width: none; }
+.plane.is-scroll::-webkit-scrollbar { width: 0; height: 0; }
+
+.scroll-proxy {
+  display: none;
+  position: fixed;
+  z-index: 3;
+  overflow: auto;
+  background: transparent;
+  pointer-events: auto;
+}
+.scroll-proxy-inner { width: 1px; }
+.scroll-proxy::-webkit-scrollbar { width: 12px; }
+.scroll-proxy::-webkit-scrollbar-thumb {
+  background: rgba(23, 61, 50, 0.45);
   border-radius: 6px;
 }
