@@ -1,7 +1,6 @@
 import { createWorld } from "./world.js";
 
 const scenes = Array.from(document.querySelectorAll(".scene"));
-const sheets = Array.from(document.querySelectorAll(".sheet"));
 const live = document.getElementById("live");
 const counter = document.getElementById("counter");
 const progress = document.getElementById("progress");
@@ -13,7 +12,7 @@ let index = 0;
 let phase = document.documentElement.classList.contains("is-overture") ? "overture" : "live";
 let skipGuard = false;
 let introTimer = 0;
-const INTRO_MS = 1800;
+const INTRO_MS = 6600;
 
 const canvas = document.getElementById("gl");
 let world = null;
@@ -96,7 +95,7 @@ document.addEventListener("touchend", (event) => {
 
 let wheelLock = 0;
 window.addEventListener("wheel", (event) => {
-  const sheet = event.target.closest && event.target.closest(".sheet");
+  const sheet = event.target.closest && event.target.closest(".plane.is-scroll, .sheet");
   if (sheet && sheet.scrollHeight > sheet.clientHeight + 8) {
     const atTop = sheet.scrollTop <= 0;
     const atBottom = sheet.scrollTop + sheet.clientHeight >= sheet.scrollHeight - 2;
@@ -161,8 +160,9 @@ function go(next) {
   scenes.forEach((scene) => scene.classList.remove("is-active"));
   scenes[index].classList.remove("is-exit");
   scenes[index].classList.add("is-active");
-  const sheet = sheets[index];
-  if (sheet) sheet.scrollTop = 0;
+  document.querySelectorAll(".plane.is-scroll, .sheet").forEach((sheet) => {
+    sheet.scrollTop = 0;
+  });
   document.body.classList.add("is-moving");
   window.setTimeout(() => document.body.classList.remove("is-moving"), 900);
   apply(index, false);

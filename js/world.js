@@ -1,14 +1,12 @@
 import * as THREE from "../vendor/three.module.min.js";
 import { CSS3DObject, CSS3DRenderer } from "./objects/CSS3DRenderer.js";
+import { arrangePlanes, buildPlanes } from "./compose.js";
 
 const DIST = 13.35;
 const DESIGN_H = 1080;
-const SHEET_W = 1140;
-const MAX_SHEET_H = 960;
 const TRAVEL_MS = 1180;
-const PHOTO_MAX_W = 440;
-const PHOTO_MAX_H = 680;
 const PHOTO_PAD = 14;
+const PHOTO_SIDE = [1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1];
 
 const MOVES = [
   "left", "up", "forward", "right", "down",
@@ -131,14 +129,51 @@ function anchorOf(i) {
 }
 
 function fitPhoto(w, h) {
-  const aspect = w / h;
-  let dw = PHOTO_MAX_W;
-  let dh = dw / aspect;
-  if (dh > PHOTO_MAX_H) {
-    dh = PHOTO_MAX_H;
-    dw = dh * aspect;
+  const portrait = h > w;
+  let dw;
+  let dh;
+  if (portrait) {
+    dh = 840;
+    dw = Math.round(dh * w / h);
+  } else if (w / h > 1.45) {
+    dw = 760;
+    dh = Math.round(dw * h / w);
+  } else {
+    dw = 680;
+    dh = Math.round(dw * h / w);
   }
-  return { w: Math.round(dw), h: Math.round(dh) };
+  return { w: dw, h: dh, portrait };
+}
+
+function introEase(u) {
+  if (u < 0.42) return u * 0.04;
+  const t = (u - 0.42) / 0.58;
+  return 0.017 + 0.983 * smoother(t);
+}
+
+function makeGlass() {
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.ShaderMaterial({
+      uniforms: {
+        tDiffuse: { value: null },
+        uResolution: { value: new THREE.Vector2(1, 1) },
+        uTint: { value: new THREE.Color(0xfffcf7) },
+        uFill: { value: 0.34 },
+        uFade: { value: 1 }
+      },
+      vertexShader: GLASS_VS,
+      fragmentShader: GLASS_FS,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false
+    })
+  );
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 4;
+  mesh.visible = false;
+  return mesh;
 }
 
 function makeTarget(w, h, depth) {
@@ -200,20 +235,26 @@ export function createWorld(canvas) {
   const plates = Array.from(document.querySelectorAll(".plate"));
   sheets.forEach((sheet) => sandbox.appendChild(sheet));
 
-  function measureSheet(sheet) {
-    sheet.style.width = SHEET_W + "px";
-    sheet.style.height = "auto";
-    sheet.style.maxHeight = "none";
-    sheet.style.overflow = "visible";
-    sheet.style.boxSizing = "border-box";
-    sheet.style.background = "transparent";
-    sheet.style.backdropFilter = "none";
-    sheet.style.webkitBackdropFilter = "none";
-    const natural = sheet.offsetHeight;
-    const h = Math.min(MAX_SHEET_H, Math.max(natural, 360));
-    sheet.style.height = h + "px";
-    sheet.style.overflow = natural > MAX_SHEET_H + 2 ? "auto" : "hidden";
-    return h;
+  function measurePlane(p) {
+    p.el.style.position = "relative";
+    p.el.style.width = p.width + "px";
+    p.el.style.height = "auto";
+    p.el.style.maxHeight = "none";
+    p.el.style.overflow = "visible";
+    p.el.style.boxSizing = "border-box";
+    p.el.style.background = "transparent";
+    const natural = Math.max(p.el.scrollHeight, p.el.offsetHeight, 1);
+    if (p.scroll && p.maxH && natural > p.maxH) {
+      p.el.style.height = p.maxH + "px";
+      p.el.style.overflowY = "auto";
+      p.pixelH = p.maxH;
+    } else {
+      p.el.style.height = natural + "px";
+      p.el.style.overflow = "hidden";
+      p.pixelH = natural;
+    }
+    p.pixelW = p.width;
+    p.el.style.position = "absolute";
   }
 
   const blurMat = new THREE.ShaderMaterial({
@@ -238,7 +279,7 @@ export function createWorld(canvas) {
   let sceneRT = null;
   let blurA = null;
   let blurB = null;
-  let metrics = { textScale: 0.01, photoScale: 0.01, gap: 0.7 };
+  let metrics = { textScale: 0.01, visW: 16, visH: 10 };
 
   const cards = sheets.map((sheet, i) => {
     const fit = fitPhoto(PHOTO_PX[i][0], PHOTO_PX[i][1]);
@@ -246,15 +287,18 @@ export function createWorld(canvas) {
     const img = plate.querySelector("img");
     const frameW = fit.w + PHOTO_PAD * 2;
     const frameH = fit.h + PHOTO_PAD * 2;
+    plate.dataset.scene = String(i);
     plate.style.width = frameW + "px";
     plate.style.height = frameH + "px";
     plate.style.boxSizing = "border-box";
+    plate.style.padding = PHOTO_PAD + "px";
     plate.style.position = "relative";
     plate.style.margin = "0";
     plate.style.top = "0";
     plate.style.left = "0";
     plate.style.flex = "none";
     plate.style.background = "transparent";
+    plate.style.overflow = "hidden";
     img.style.display = "block";
     img.style.width = "100%";
     img.style.height = "100%";
@@ -263,51 +307,38 @@ export function createWorld(canvas) {
     img.style.maxWidth = "none";
     img.style.maxHeight = "none";
 
-    const pixelH = measureSheet(sheet);
-    const sheetObj = new CSS3DObject(sheet);
+    const planes = buildPlanes(sheet, i);
+    planes.forEach((p) => {
+      p.el.dataset.scene = String(i);
+      sandbox.appendChild(p.el);
+      measurePlane(p);
+      p.obj = new CSS3DObject(p.el);
+      if (p.glass) {
+        p.glassMesh = makeGlass();
+        scene.add(p.glassMesh);
+      }
+    });
+    sheet.style.display = "none";
+
     const plateObj = new CSS3DObject(plate);
     const rig = new THREE.Group();
-    rig.add(sheetObj, plateObj);
+    planes.forEach((p) => rig.add(p.obj));
+    rig.add(plateObj);
     rig.position.copy(anchorOf(i));
     cssScene.add(rig);
-
-    const glass = new THREE.Mesh(
-      new THREE.PlaneGeometry(1, 1),
-      new THREE.ShaderMaterial({
-        uniforms: {
-          tDiffuse: { value: null },
-          uResolution: { value: new THREE.Vector2(1, 1) },
-          uTint: { value: new THREE.Color(0xfffcf7) },
-          uFill: { value: 0.32 },
-          uFade: { value: 1 }
-        },
-        vertexShader: GLASS_VS,
-        fragmentShader: GLASS_FS,
-        transparent: true,
-        depthTest: false,
-        depthWrite: false,
-        toneMapped: false
-      })
-    );
-    glass.frustumCulled = false;
-    glass.renderOrder = 4;
-    glass.visible = false;
-    scene.add(glass);
-
-    sheet.classList.add("is-spatial-card");
     plate.classList.add("is-spatial-plate");
     return {
-      sheet,
+      planes,
       plate,
-      sheetObj,
       plateObj,
       rig,
-      glass,
       anchor: anchorOf(i),
-      pixelW: SHEET_W,
-      pixelH,
       plateW: frameW,
       plateH: frameH,
+      portrait: fit.portrait,
+      side: PHOTO_SIDE[i],
+      fit: 1,
+      layoutScale: 0.01,
       fade: i === 0 ? 1 : 0
     };
   });
@@ -344,6 +375,7 @@ export function createWorld(canvas) {
   const glassPos = new THREE.Vector3();
   const glassQuat = new THREE.Quaternion();
   const glassScale = new THREE.Vector3();
+  const glassBack = new THREE.Vector3();
   const drawSize = new THREE.Vector2();
   let poseNow = poseFor(0);
 
@@ -352,39 +384,69 @@ export function createWorld(canvas) {
     const visH = 2 * DIST * tan;
     const visW = visH * (viewW / Math.max(1, viewH));
     const textScale = visH / DESIGN_H;
-    let photoScale = textScale;
-    const gap = Math.max(0.58, 72 * textScale);
-    const maxPlate = PHOTO_MAX_W + PHOTO_PAD * 2;
-    const limit = visW * 0.92;
-    let guard = 0;
-    while (SHEET_W * textScale + gap + maxPlate * photoScale > limit && photoScale > textScale * 0.42 && guard < 14) {
-      photoScale *= 0.9;
-      guard += 1;
-    }
-    return { textScale, photoScale, gap };
+    return { textScale, visW, visH };
+  }
+
+  function clusterBounds(planes) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    planes.forEach((p) => {
+      minX = Math.min(minX, p.cx - p.pixelW / 2);
+      maxX = Math.max(maxX, p.cx + p.pixelW / 2);
+      minY = Math.min(minY, p.cy - p.pixelH / 2);
+      maxY = Math.max(maxY, p.cy + p.pixelH / 2);
+    });
+    return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
   }
 
   function layoutCards() {
-    const { textScale, photoScale, gap } = metrics;
-    cards.forEach((card) => {
-      const sheetWorldW = card.pixelW * textScale;
-      const plateWorldW = card.plateW * photoScale;
-      const total = sheetWorldW + gap + plateWorldW;
-      const left = -total / 2;
-      const sheetX = left + sheetWorldW / 2;
-      const plateX = left + sheetWorldW + gap + plateWorldW / 2;
-      card.sheetObj.position.set(sheetX, 0.02, 0);
-      card.plateObj.position.set(plateX, 0.02, 0.05);
-      card.sheetObj.scale.setScalar(textScale);
-      card.plateObj.scale.setScalar(photoScale);
-      if (card.pedestal) card.pedestal.position.x = plateX;
+    const { textScale, visW, visH } = metrics;
+    cards.forEach((card, i) => {
+      arrangePlanes(i, card.planes);
+      const bounds = clusterBounds(card.planes);
+      const gapPx = 96;
+      const needW = bounds.w + gapPx + card.plateW;
+      const needH = Math.max(bounds.h, card.plateH);
+      const fitW = (visW * 0.9) / (needW * textScale);
+      const fitH = (visH * 0.8) / (needH * textScale);
+      const fit = Math.min(1, fitW, fitH);
+      card.fit = fit;
+      const s = textScale * fit;
+      card.layoutScale = s;
+      card.planes.forEach((p) => {
+        p.obj.position.set((p.cx - bounds.cx) * s, -(p.cy - bounds.cy) * s, p.z);
+        p.obj.scale.setScalar(s);
+      });
+      const clusterHalf = bounds.w * s / 2;
+      const photoW = card.plateW * s;
+      const gapW = gapPx * s;
+      let photoX = card.side > 0
+        ? clusterHalf + gapW + photoW / 2
+        : -clusterHalf - gapW - photoW / 2;
+      const photoZ = card.portrait ? -0.36 : -0.18;
+      const photoY = card.portrait ? 0.22 : 0.04;
+      const left = Math.min(-clusterHalf, photoX - photoW / 2);
+      const right = Math.max(clusterHalf, photoX + photoW / 2);
+      const shift = -(left + right) / 2;
+      card.planes.forEach((p) => { p.obj.position.x += shift; });
+      photoX += shift;
+      card.plateObj.position.set(photoX, photoY, photoZ);
+      card.plateObj.scale.setScalar(s);
+      if (card.pedestal) {
+        card.pedestal.position.x = photoX;
+        card.pedestal.position.z = photoZ + 0.45;
+        card.pedestal.scale.set(Math.max(1.15, photoW / 1.7 * 0.58), 1, 1.2);
+      }
     });
   }
 
   function remeasure() {
     cards.forEach((card) => {
-      card.pixelH = measureSheet(card.sheet);
+      card.planes.forEach(measurePlane);
     });
+    layoutCards();
   }
 
   function mount(i) {
@@ -443,7 +505,7 @@ export function createWorld(canvas) {
   }
 
   function present(now) {
-    const kIntro = smoother(clamp01(intro));
+    const kIntro = introEase(clamp01(intro));
     cards.forEach((card, i) => {
       let ox = 0;
       let oy = 0;
@@ -468,23 +530,26 @@ export function createWorld(canvas) {
       } else if (i === shown) {
         fade = 1;
         if (intro < 0.999) {
-          const w = 1 - kIntro;
-          oz = -2.2 * w;
-          oy = 0.26 * w;
-          sc = 0.95 + 0.05 * kIntro;
-          fade = 0.2 + 0.8 * kIntro;
+          const reveal = smoother(clamp01((kIntro - 0.48) / 0.52));
+          oz = -4.8 * (1 - reveal);
+          oy = 0.9 * (1 - reveal);
+          sc = 0.86 + 0.14 * reveal;
+          fade = reveal;
         }
       }
       card.fade = fade;
       card.rig.position.set(card.anchor.x + ox, card.anchor.y + oy, card.anchor.z + oz);
-      card.sheetObj.scale.setScalar(metrics.textScale * sc);
-      card.plateObj.scale.setScalar(metrics.photoScale * sc);
+      card.rig.scale.setScalar(sc);
       const on = fade > 0.03;
-      card.sheet.style.visibility = on ? "visible" : "hidden";
+      const interactive = !travel && i === shown && intro > 0.92;
+      card.planes.forEach((p) => {
+        p.el.style.visibility = on ? "visible" : "hidden";
+        p.el.style.opacity = String(fade);
+        p.el.style.pointerEvents = interactive ? "auto" : "none";
+      });
       card.plate.style.visibility = on ? "visible" : "hidden";
-      card.sheet.style.opacity = String(fade);
       card.plate.style.opacity = String(fade);
-      card.sheet.style.pointerEvents = !travel && i === shown && intro > 0.92 ? "auto" : "none";
+      card.plate.style.pointerEvents = "none";
     });
   }
 
@@ -517,21 +582,25 @@ export function createWorld(canvas) {
     cssScene.updateMatrixWorld(true);
     const size = renderer.getDrawingBufferSize(drawSize);
     cards.forEach((card) => {
-      card.sheetObj.getWorldPosition(glassPos);
-      card.sheetObj.getWorldQuaternion(glassQuat);
-      card.sheetObj.getWorldScale(glassScale);
-      card.glass.position.copy(glassPos);
-      card.glass.position.z -= 0.04;
-      card.glass.quaternion.copy(glassQuat);
-      card.glass.scale.set(
-        Math.max(0.01, card.pixelW * glassScale.x),
-        Math.max(0.01, card.pixelH * glassScale.y),
-        1
-      );
-      card.glass.material.uniforms.tDiffuse.value = buffer.texture;
-      card.glass.material.uniforms.uResolution.value.set(size.x, size.y);
-      card.glass.material.uniforms.uFade.value = card.fade;
-      card.glass.visible = card.fade > 0.03;
+      card.planes.forEach((p) => {
+        if (!p.glassMesh) return;
+        p.obj.getWorldPosition(glassPos);
+        p.obj.getWorldQuaternion(glassQuat);
+        p.obj.getWorldScale(glassScale);
+        p.glassMesh.position.copy(glassPos);
+        p.glassMesh.quaternion.copy(glassQuat);
+        glassBack.set(0, 0, -1).applyQuaternion(glassQuat);
+        p.glassMesh.position.addScaledVector(glassBack, 0.035);
+        p.glassMesh.scale.set(
+          Math.max(0.01, p.pixelW * Math.abs(glassScale.x)),
+          Math.max(0.01, p.pixelH * Math.abs(glassScale.y)),
+          1
+        );
+        p.glassMesh.material.uniforms.tDiffuse.value = buffer.texture;
+        p.glassMesh.material.uniforms.uResolution.value.set(size.x, size.y);
+        p.glassMesh.material.uniforms.uFade.value = card.fade;
+        p.glassMesh.visible = card.fade > 0.03;
+      });
     });
   }
 
@@ -563,7 +632,7 @@ export function createWorld(canvas) {
     }
 
     const high = introPose();
-    const k = smoother(clamp01(intro));
+    const k = introEase(clamp01(intro));
     const pos = high.pos.clone().lerp(logical.pos, k);
     look.copy(high.look).lerp(logical.look, k);
 
@@ -583,10 +652,17 @@ export function createWorld(canvas) {
     poseNow = { pos: pos.clone(), look: look.clone() };
 
     applyAtmosphere(fromI, toI, mix);
+    const introK = introEase(clamp01(intro));
+    scene.fog.near = 18 + (1 - introK) * 26;
+    scene.fog.far = 48 + (1 - introK) * 60;
     present(now);
 
     if (!sceneRT) resize();
-    cards.forEach((card) => { card.glass.visible = false; });
+    cards.forEach((card) => {
+      card.planes.forEach((p) => {
+        if (p.glassMesh) p.glassMesh.visible = false;
+      });
+    });
     renderer.setRenderTarget(sceneRT);
     renderer.clear(true, true, true);
     renderer.render(scene, camera);
@@ -658,9 +734,16 @@ function poseFor(i) {
 
 function introPose() {
   const settled = poseFor(0);
+  const away = settled.pos.clone().sub(settled.look);
+  if (away.lengthSq() < 0.0001) away.set(0, 0, 1);
+  away.normalize();
+  const side = new THREE.Vector3(away.z, 0, -away.x).normalize();
   return {
-    pos: settled.pos.clone().add(new THREE.Vector3(0.7, 2.15, 4.4)),
-    look: settled.look.clone().add(new THREE.Vector3(0, 0.35, 0))
+    pos: settled.pos.clone()
+      .addScaledVector(away, 12.5)
+      .addScaledVector(side, 4.6)
+      .add(new THREE.Vector3(0, 7.4, 0)),
+    look: settled.look.clone().add(new THREE.Vector3(0, 1.35, 0))
   };
 }
 

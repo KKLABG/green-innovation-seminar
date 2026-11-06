@@ -14,6 +14,7 @@
     (function () {
       var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       var at = /[?&]at=(\d+)/.exec(location.search);
+      document.documentElement.style.setProperty("--intro-ms", "6.6s");
       if (!reduce && !(at && +at[1] >= 1 && +at[1] <= 16)) {
         document.documentElement.classList.add("is-overture");
       }
@@ -42,9 +43,11 @@
   <div id="overture">
     <div class="ov">
       <div class="css-ring" aria-hidden="true"></div>
-      <p class="ov-kicker">第5次报告</p>
+      <p class="ov-kicker">第5次报告 · 第十组</p>
+      <p class="ov-who">范宇瀚、罗昌粟、魏凯</p>
+      <p class="ov-date">2026年11月9日</p>
       <div class="ov-rule"></div>
-      <p class="ov-group">第十组</p>
+      <p class="ov-title">女性高管认知烙印<br>对企业绿色创新的影响研究</p>
     </div>
   </div>
 
