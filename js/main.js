@@ -1,6 +1,7 @@
 import { createWorld } from "./world.js";
 
 const scenes = Array.from(document.querySelectorAll(".scene"));
+const sheets = Array.from(document.querySelectorAll(".sheet"));
 const live = document.getElementById("live");
 const counter = document.getElementById("counter");
 const progress = document.getElementById("progress");
@@ -93,6 +94,26 @@ document.addEventListener("touchend", (event) => {
   go(index + (dx < 0 ? 1 : -1));
 }, { passive: true });
 
+let wheelLock = 0;
+window.addEventListener("wheel", (event) => {
+  const sheet = event.target.closest && event.target.closest(".sheet");
+  if (sheet && sheet.scrollHeight > sheet.clientHeight + 8) {
+    const atTop = sheet.scrollTop <= 0;
+    const atBottom = sheet.scrollTop + sheet.clientHeight >= sheet.scrollHeight - 2;
+    const goingUp = event.deltaY < 0;
+    if ((goingUp && !atTop) || (!goingUp && !atBottom)) return;
+  }
+  if (Math.abs(event.deltaY) < 12) return;
+  event.preventDefault();
+  if (phase === "overture") {
+    finishIntro();
+    return;
+  }
+  if (performance.now() < wheelLock) return;
+  wheelLock = performance.now() + 750;
+  go(index + (event.deltaY > 0 ? 1 : -1));
+}, { passive: false });
+
 window.addEventListener("keydown", (event) => {
   const keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", " ", "PageDown", "PageUp", "Home", "End"];
   if (!keys.includes(event.key)) return;
@@ -140,7 +161,7 @@ function go(next) {
   scenes.forEach((scene) => scene.classList.remove("is-active"));
   scenes[index].classList.remove("is-exit");
   scenes[index].classList.add("is-active");
-  const sheet = scenes[index].querySelector(".sheet");
+  const sheet = sheets[index];
   if (sheet) sheet.scrollTop = 0;
   document.body.classList.add("is-moving");
   window.setTimeout(() => document.body.classList.remove("is-moving"), 900);
@@ -160,7 +181,7 @@ function apply(i, snap) {
   progress.style.setProperty("--p", String((i + 1) / 16));
   const depth = document.getElementById("depth");
   if (depth) depth.style.setProperty("--depth", (i / 15) * 100 + "%");
-  const heading = scenes[i].querySelector("h1, h2");
+  const heading = document.getElementById("t" + (i + 1));
   if (live && heading) live.textContent = heading.textContent.replace(/\s+/g, "");
   if (world) world.goTo(i, snap);
 }

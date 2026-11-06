@@ -82,7 +82,74 @@ h1, h2, h3, .serif, .lede, blockquote, .thanks-title, .pull {
   transition: background 0.7s ease;
 }
 
-body.is-moving #veil { background: rgba(243, 240, 232, 0.18); }
+body.is-moving #veil { background: rgba(243, 240, 232, 0.08); }
+
+body.is-spatial #vignette { display: none; }
+body.is-spatial #css3d { pointer-events: none; }
+
+/* Leave layout to CSS3DRenderer; no 2D grid/vh/cover fighting translate(-50%,-50%). */
+body.is-spatial #stage {
+  visibility: hidden;
+  pointer-events: none;
+  height: 0;
+  overflow: hidden;
+}
+
+body.is-spatial .sheet {
+  width: 860px;
+  height: 660px;
+  max-height: none;
+  pointer-events: auto;
+  background: rgba(255, 252, 247, 0.36);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    0 24px 60px rgba(20, 24, 28, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  -webkit-backdrop-filter: blur(28px) saturate(1.45);
+  backdrop-filter: blur(28px) saturate(1.45);
+}
+
+body.is-spatial figure.plate {
+  position: relative;
+  top: 0;
+  left: 0;
+  margin: 0;
+  align-self: unset;
+  max-height: none;
+  overflow: visible;
+  padding: 12px;
+  box-sizing: border-box;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  box-shadow: 0 18px 40px rgba(20, 24, 28, 0.2);
+}
+
+body.is-spatial figure.plate img {
+  display: block;
+  margin: 0;
+  width: 100%;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
+  object-position: center center;
+}
+
+body.no-webgl #stage {
+  position: static;
+  overflow: auto;
+  height: auto;
+}
+body.no-webgl .scene {
+  position: relative;
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  display: grid;
+  margin: 24px auto;
+  height: auto;
+}
 
 #progress {
   position: fixed;
