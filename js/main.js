@@ -12,7 +12,7 @@ let index = 0;
 let phase = document.documentElement.classList.contains("is-overture") ? "overture" : "live";
 let skipGuard = false;
 let introTimer = 0;
-const INTRO_MS = 8000;
+const INTRO_MS = 12000;
 
 const canvas = document.getElementById("gl");
 let world = null;

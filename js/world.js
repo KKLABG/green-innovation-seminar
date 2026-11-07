@@ -599,7 +599,7 @@ export function createWorld(canvas) {
       } else if (i === shown) {
         fade = 1;
         if (intro < 0.999) {
-          const reveal = smoother(clamp01((intro - 0.72) / 0.28));
+          const reveal = smoother(clamp01((intro - 0.86) / 0.14));
           oz = -4.8 * (1 - reveal);
           oy = 0.9 * (1 - reveal);
           sc = 0.86 + 0.14 * reveal;
@@ -729,7 +729,7 @@ export function createWorld(canvas) {
     let roll = 0;
     let travelBow = 0;
     if (intro < 0.999) {
-      const opening = introFlight(clamp01(intro));
+      const opening = introFlight(openingProgress(intro));
       pos.copy(opening.pos);
       look.copy(opening.look);
       roll = opening.roll;
@@ -760,7 +760,7 @@ export function createWorld(canvas) {
     camera.position.copy(pos);
     camera.lookAt(look);
     const fov = intro < 0.999
-      ? 48 - smoother(clamp01((intro - 0.4) / 0.45)) * 6
+      ? 48 - smoother(clamp01((intro - 0.22) / (OPENING_FLIGHT - 0.22))) * 6
       : 42 + travelBow * 4 + (reduced ? 0 : Math.sin(now * 0.00032) * 0.5);
     if (Math.abs(camera.fov - fov) > 0.05) {
       camera.fov = fov;
@@ -771,13 +771,13 @@ export function createWorld(canvas) {
 
     applyAtmosphere(fromI, toI, mix);
     if (intro < 0.999) {
-      const u = clamp01(intro);
-      const clear = smoother(clamp01((u - 0.28) / 0.55));
+      const flight = openingProgress(intro);
+      const clear = smoother(clamp01((flight - 0.28) / 0.55));
       scene.background.copy(chaosColor).lerp(bgColor, clear);
       scene.fog.color.copy(chaosColor).lerp(fogColor, clear);
       scene.fog.near = 6 + clear * 12;
       scene.fog.far = 26 + clear * 26;
-      rift.update(u, now * 0.001);
+      rift.update(flight, now * 0.001);
       habitats[0].setVeil(1 - clear);
     } else if (travel) {
       habitats[fromI].setVeil(0);
@@ -992,6 +992,12 @@ function poseFor(i) {
     pos: base.clone().add(offset),
     look: base.clone()
   };
+}
+
+const OPENING_FLIGHT = 0.55;
+
+function openingProgress(intro) {
+  return clamp01(intro / OPENING_FLIGHT);
 }
 
 function introFlight(u) {

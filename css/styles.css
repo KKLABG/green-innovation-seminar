@@ -698,8 +698,8 @@ html.is-overture #progress { opacity: 0; }
   animation: rise 1.05s 5.5s both;
 }
 
-body.is-overture #overture { animation: holdfade var(--intro-ms, 8s) cubic-bezier(0.4, 0, 0.2, 1) both; }
-body.is-overture .scene.is-active { animation: coverin var(--intro-ms, 8s) cubic-bezier(0.4, 0, 0.2, 1) both; }
+body.is-overture #overture { animation: holdfade var(--intro-ms, 12s) cubic-bezier(0.4, 0, 0.2, 1) both; }
+body.is-overture .scene.is-active { animation: coverin var(--intro-ms, 12s) cubic-bezier(0.4, 0, 0.2, 1) both; }
 body.is-overture .topbar,
 body.is-overture .dock,
 body.is-overture .meter,
@@ -747,10 +747,10 @@ body.no-webgl .css-ring {
 }
 
 @keyframes holdfade {
-  0%, 48% { opacity: 0; }
-  60% { opacity: 1; }
-  80% { opacity: 1; }
-  94%, 100% { opacity: 0; }
+  0%, 33% { opacity: 0; }
+  37% { opacity: 1; }
+  86% { opacity: 1; }
+  96%, 100% { opacity: 0; }
 }
 
 @keyframes coverin {
