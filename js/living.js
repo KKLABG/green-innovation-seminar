@@ -573,8 +573,6 @@ function addHero(group, index) {
 }
 
 function vines(group) {
-  const grass = grassField(0x3e6b45);
-  group.add(grass);
   const leaves = [];
   [-9.2, -8.3, 8.5, 9.4].forEach((x, n) => {
     const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.06, 2.6, 5), standard(0x24543a, 0.8));
@@ -591,7 +589,6 @@ function vines(group) {
     }
   });
   return (t) => {
-    grass.material.uniforms.uTime.value = t;
     leaves.forEach((leaf, i) => {
       const open = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(t * 1.2 + i));
       leaf.scale.set(open, 0.7 + open * 0.35, 1);
