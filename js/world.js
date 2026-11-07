@@ -2,10 +2,11 @@ import * as THREE from "../vendor/three.module.min.js";
 import { CSS3DObject, CSS3DRenderer } from "./objects/CSS3DRenderer.js";
 import { arrangePlanes, buildPlanes } from "./compose.js";
 import { MOTIF_SPECS, createMotifs, createRift } from "./effects.js";
+import { createHabitats, createFlight } from "./living.js";
 
 const DIST = 13.35;
 const DESIGN_H = 1080;
-const TRAVEL_MS = 1180;
+const TRAVEL_MS = 1600;
 const PHOTO_PAD = 14;
 const PHOTO_SIDE = [1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1, 1, -1];
 
@@ -83,6 +84,23 @@ void main() {
   c += texture2D(tDiffuse, vUv + off * 3.230769).rgb * 0.070270;
   c += texture2D(tDiffuse, vUv - off * 3.230769).rgb * 0.070270;
   gl_FragColor = vec4(c, 1.0);
+}
+`;
+
+const BLOOM_FS = `
+precision highp float;
+uniform sampler2D tDiffuse;
+uniform float uStrength;
+varying vec2 vUv;
+void main() {
+  vec2 d = (vUv - 0.5) * vec2(0.004, 0.003);
+  float r = texture2D(tDiffuse, vUv + d).r;
+  float g = texture2D(tDiffuse, vUv).g;
+  float b = texture2D(tDiffuse, vUv - d).b;
+  vec3 c = vec3(r, g, b);
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  float m = smoothstep(0.7, 1.05, l) * uStrength;
+  gl_FragColor = vec4(c, m);
 }
 `;
 
@@ -270,6 +288,23 @@ export function createWorld(canvas) {
   const blurQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blurMat);
   blurQuad.position.z = -1;
   blurScene.add(blurQuad);
+  const bloomMat = new THREE.ShaderMaterial({
+    uniforms: {
+      tDiffuse: { value: null },
+      uStrength: { value: 0.28 }
+    },
+    vertexShader: BLUR_VS,
+    fragmentShader: BLOOM_FS,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false
+  });
+  const bloomScene = new THREE.Scene();
+  const bloomQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bloomMat);
+  bloomQuad.position.z = -1;
+  bloomScene.add(bloomQuad);
 
   let sceneRT = null;
   let blurA = null;
@@ -376,6 +411,9 @@ export function createWorld(canvas) {
     group.position.copy(anchorOf(i));
     return group;
   });
+  const habitats = createHabitats(rooms);
+  const flight = createFlight();
+  camera.add(flight.group);
   rooms[0].add(rift.group);
   cards.forEach((card, i) => {
     card.pedestal = rooms[i].userData.pedestal || null;
@@ -400,7 +438,13 @@ export function createWorld(canvas) {
   const drawSize = new THREE.Vector2();
   let poseNow = poseFor(0);
   let placedKey = "";
+  let quality = 1;
+  let frameEma = 16;
+  let lastFrame = 0;
   const chaosColor = new THREE.Color(0x120d0c);
+  const driftSide = new THREE.Vector3();
+  const driftUp = new THREE.Vector3();
+  const driftFwd = new THREE.Vector3();
   const ndc = new THREE.Vector3();
   const rayDir = new THREE.Vector3();
 
@@ -683,30 +727,41 @@ export function createWorld(canvas) {
 
     const pos = new THREE.Vector3();
     let roll = 0;
+    let travelBow = 0;
     if (intro < 0.999) {
-      const flight = introFlight(clamp01(intro));
-      pos.copy(flight.pos);
-      look.copy(flight.look);
-      roll = flight.roll;
+      const opening = introFlight(clamp01(intro));
+      pos.copy(opening.pos);
+      look.copy(opening.look);
+      roll = opening.roll;
     } else {
       pos.copy(logical.pos);
       look.copy(logical.look);
       pointer.x += (pointerTarget.x - pointer.x) * 0.05;
       pointer.y += (pointerTarget.y - pointer.y) * 0.05;
-      const idle = reduced ? 0 : now * 0.00022;
-      const side = new THREE.Vector3().subVectors(look, pos).cross(new THREE.Vector3(0, 1, 0));
-      if (side.lengthSq() > 0.0001) side.normalize();
-      const up = new THREE.Vector3(0, 1, 0);
-      pos.addScaledVector(side, pointer.x * 0.42 + Math.sin(idle) * 0.06);
-      pos.addScaledVector(up, pointer.y * 0.22 + Math.cos(idle * 0.8) * 0.04);
-      look.addScaledVector(side, pointer.x * 0.16);
-      look.y += pointer.y * 0.06;
+      const idle = reduced ? 0 : now * 0.00018;
+      driftSide.subVectors(look, pos).cross(driftUp.set(0, 1, 0));
+      if (driftSide.lengthSq() > 0.0001) driftSide.normalize();
+      pos.addScaledVector(driftSide, pointer.x * 0.42 + Math.sin(idle) * 0.34 + Math.sin(idle * 0.43) * 0.12);
+      pos.addScaledVector(driftUp, pointer.y * 0.22 + Math.cos(idle * 0.72) * 0.2);
+      driftFwd.subVectors(look, pos);
+      if (driftFwd.lengthSq() > 0.0001) {
+        driftFwd.normalize();
+        pos.addScaledVector(driftFwd, Math.sin(idle * 0.51) * 0.24);
+      }
+      look.addScaledVector(driftSide, pointer.x * 0.16 + Math.sin(idle * 0.63) * 0.06);
+      look.y += pointer.y * 0.06 + Math.cos(idle * 0.47) * 0.04;
+      if (travel) {
+        travelBow = Math.sin(Math.PI * clamp01((now - travel.t0) / travel.dur));
+        roll = driftOf(travel.move) * travelBow * 0.07;
+      }
     }
 
     camera.up.set(Math.sin(roll), Math.cos(roll), 0);
     camera.position.copy(pos);
     camera.lookAt(look);
-    const fov = intro < 0.999 ? 48 - smoother(clamp01((intro - 0.4) / 0.45)) * 6 : 42;
+    const fov = intro < 0.999
+      ? 48 - smoother(clamp01((intro - 0.4) / 0.45)) * 6
+      : 42 + travelBow * 4 + (reduced ? 0 : Math.sin(now * 0.00032) * 0.5);
     if (Math.abs(camera.fov - fov) > 0.05) {
       camera.fov = fov;
       camera.updateProjectionMatrix();
@@ -723,14 +778,33 @@ export function createWorld(canvas) {
       scene.fog.near = 6 + clear * 12;
       scene.fog.far = 26 + clear * 26;
       rift.update(u, now * 0.001);
+      habitats[0].setVeil(1 - clear);
+    } else if (travel) {
+      habitats[fromI].setVeil(0);
+      habitats[toI].setVeil(0);
+      scene.fog.near = 16;
+      scene.fog.far = 78;
+      if (rift.group.visible) rift.group.visible = false;
     } else {
       scene.fog.near = 18;
-      scene.fog.far = 48;
+      scene.fog.far = 56;
       if (rift.group.visible) rift.group.visible = false;
+      habitats[shown].setVeil(0);
     }
-    if (!reduced && intro > 0.97) {
-      const live = travel ? [travel.from, travel.to] : [shown];
-      live.forEach((i) => motifs[i].tick(now * 0.001));
+    if (!reduced) {
+      const clock = now * 0.001;
+      const live = travel ? [fromI, toI] : [shown];
+      live.forEach((i) => {
+        habitats[i].tick(clock, quality);
+        if (intro > 0.97) motifs[i].tick(clock);
+      });
+      const flying = !!travel && intro > 0.97;
+      flight.group.visible = flying;
+      if (flying) flight.tick(clock);
+      sun.position.x += Math.sin(clock * 0.17) * 2.4;
+      sun.position.y += Math.cos(clock * 0.11) * 0.7;
+    } else if (flight.group.visible) {
+      flight.group.visible = false;
     }
     present(now);
 
@@ -747,7 +821,19 @@ export function createWorld(canvas) {
     syncGlass(blurred);
     renderer.setRenderTarget(null);
     renderer.render(scene, camera);
+    if (quality > 0.75 && !reduced && blurB) {
+      bloomMat.uniforms.tDiffuse.value = blurB.texture;
+      bloomMat.uniforms.uStrength.value = 0.26;
+      renderer.autoClear = false;
+      renderer.render(bloomScene, blurCam);
+      renderer.autoClear = true;
+    }
     cssRenderer.render(cssScene, camera);
+    const frameDt = lastFrame ? Math.min(80, now - lastFrame) : 16;
+    lastFrame = now;
+    frameEma = frameEma * 0.96 + frameDt * 0.04;
+    if (frameEma > 36) quality = 0.62;
+    else if (frameEma < 20) quality = 1;
     if (intro > 0.97 && !travel) {
       const viewW = canvas.clientWidth || window.innerWidth;
       const viewH = canvas.clientHeight || window.innerHeight;
@@ -969,6 +1055,8 @@ function sampleTravel(fromPose, toIndex, u, move) {
     pos.addScaledVector(up, bow * 1.7);
     pos.addScaledVector(side, -bow * 1.5);
   }
+  pos.addScaledVector(up, bow * 1.5);
+  pos.addScaledVector(dir, -bow * 1.35);
   return { pos, look };
 }
 
@@ -990,13 +1078,16 @@ function buildRoom(i) {
   const r = ROOMS[i];
   const g = new THREE.Group();
   const floor = new THREE.Mesh(new THREE.BoxGeometry(22, 0.35, 16), mat(r.floor, 0.86));
+  floor.name = "floor";
   add(g, floor, 0, -3.7, 0);
   const wall = new THREE.Mesh(new THREE.BoxGeometry(22, 9, 0.4), mat(r.wall, 0.9));
+  wall.name = "wall";
   add(g, wall, 0, 0.4, -5.2);
   const shell = new THREE.Mesh(
-    new THREE.SphereGeometry(16, 24, 16),
+    new THREE.SphereGeometry(16, 32, 20),
     new THREE.MeshBasicMaterial({ color: r.sky, side: THREE.BackSide })
   );
+  shell.name = "shell";
   g.add(shell);
   backdrop(g, i);
   const pedestal = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.18, 1.05), mat(0xf7f3ec, 0.48));
@@ -1219,9 +1310,11 @@ function backdrop(g, i) {
   const colors = BANDS[i];
   [-6.2, -2.15, 1.55].forEach((x, n) => {
     const panel = new THREE.Mesh(new THREE.BoxGeometry(2.35, 6.2, 0.1), mat(colors[n], 0.92));
+    panel.userData.band = true;
     add(g, panel, x, 0.2, -1.55);
   });
   const ear = new THREE.Mesh(new THREE.BoxGeometry(2.05, 5.1, 0.1), mat(colors[0], 0.78));
+  ear.userData.band = true;
   add(g, ear, -8.55, 0.35, -1.55);
   const rug = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.025, 3.4), mat(colors[2], 0.95));
   add(g, rug, -1.2, -3.5, 0.15);
@@ -1241,6 +1334,8 @@ function dress(g, i, r) {
   const hanging = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), new THREE.MeshStandardMaterial({
     color: 0xfff0d2, emissive: i === 15 ? 0xf0d2a4 : 0xffc56a, emissiveIntensity: 0.75, roughness: 0.4
   }));
+  hanging.userData.life = "glow";
+  hanging.userData.baseY = 4.45;
   add(g, hanging, 3.15, 4.45, -0.35);
   const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.7, 4), mat(0x2c2a28, 0.5));
   add(g, cord, 3.15, 4.9, -0.35);
@@ -1250,6 +1345,7 @@ function plant(g, x, z, h, color) {
   const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, h * 0.42, 6), mat(0x6b4a32, 0.8));
   add(g, trunk, x, -3.5 + h * 0.2, z);
   const crown = new THREE.Mesh(new THREE.SphereGeometry(h * 0.28, 12, 10), mat(color, 0.86));
+  crown.userData.life = "sway";
   add(g, crown, x, -3.5 + h * 0.62, z);
 }
 
@@ -1272,6 +1368,8 @@ function lantern(g, x, y, z, color) {
   const glow = new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 10), new THREE.MeshStandardMaterial({
     color, emissive: color, emissiveIntensity: 0.8, roughness: 0.4
   }));
+  glow.userData.life = "glow";
+  glow.userData.baseY = y;
   add(g, glow, x, y, z);
 }
 
