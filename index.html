@@ -14,7 +14,7 @@
     (function () {
       var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       var at = /[?&]at=(\d+)/.exec(location.search);
-      document.documentElement.style.setProperty("--intro-ms", "6.6s");
+      document.documentElement.style.setProperty("--intro-ms", "8s");
       if (!reduce && !(at && +at[1] >= 1 && +at[1] <= 16)) {
         document.documentElement.classList.add("is-overture");
       }

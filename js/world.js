@@ -1,6 +1,7 @@
 import * as THREE from "../vendor/three.module.min.js";
 import { CSS3DObject, CSS3DRenderer } from "./objects/CSS3DRenderer.js";
 import { arrangePlanes, buildPlanes } from "./compose.js";
+import { MOTIF_SPECS, createMotifs, createRift } from "./effects.js";
 
 const DIST = 13.35;
 const DESIGN_H = 1080;
@@ -143,12 +144,6 @@ function fitPhoto(w, h) {
     dh = Math.round(dw * h / w);
   }
   return { w: dw, h: dh, portrait };
-}
-
-function introEase(u) {
-  if (u < 0.42) return u * 0.04;
-  const t = (u - 0.42) / 0.58;
-  return 0.017 + 0.983 * smoother(t);
 }
 
 function makeGlass() {
@@ -373,11 +368,15 @@ export function createWorld(canvas) {
   const fill = new THREE.DirectionalLight(0xfff4e8, 0.42);
   scene.add(fill);
 
+  const motifs = createMotifs();
+  const rift = createRift();
   const rooms = ROOMS.map((_, i) => {
     const group = buildRoom(i);
+    group.add(motifs[i].group);
     group.position.copy(anchorOf(i));
     return group;
   });
+  rooms[0].add(rift.group);
   cards.forEach((card, i) => {
     card.pedestal = rooms[i].userData.pedestal || null;
   });
@@ -400,6 +399,10 @@ export function createWorld(canvas) {
   const glassBack = new THREE.Vector3();
   const drawSize = new THREE.Vector2();
   let poseNow = poseFor(0);
+  let placedKey = "";
+  const chaosColor = new THREE.Color(0x120d0c);
+  const ndc = new THREE.Vector3();
+  const rayDir = new THREE.Vector3();
 
   function computeMetrics(viewW, viewH) {
     const tan = Math.tan((42 * Math.PI) / 360);
@@ -482,6 +485,7 @@ export function createWorld(canvas) {
   mount(shown);
 
   function resize() {
+    placedKey = "";
     const w = canvas.clientWidth || window.innerWidth;
     const h = canvas.clientHeight || window.innerHeight;
     if (!w || !h) return;
@@ -527,7 +531,6 @@ export function createWorld(canvas) {
   }
 
   function present(now) {
-    const kIntro = introEase(clamp01(intro));
     cards.forEach((card, i) => {
       let ox = 0;
       let oy = 0;
@@ -552,7 +555,7 @@ export function createWorld(canvas) {
       } else if (i === shown) {
         fade = 1;
         if (intro < 0.999) {
-          const reveal = smoother(clamp01((kIntro - 0.48) / 0.52));
+          const reveal = smoother(clamp01((intro - 0.72) / 0.28));
           oz = -4.8 * (1 - reveal);
           oy = 0.9 * (1 - reveal);
           sc = 0.86 + 0.14 * reveal;
@@ -678,30 +681,57 @@ export function createWorld(canvas) {
       mount(shown);
     }
 
-    const high = introPose();
-    const k = introEase(clamp01(intro));
-    const pos = high.pos.clone().lerp(logical.pos, k);
-    look.copy(high.look).lerp(logical.look, k);
+    const pos = new THREE.Vector3();
+    let roll = 0;
+    if (intro < 0.999) {
+      const flight = introFlight(clamp01(intro));
+      pos.copy(flight.pos);
+      look.copy(flight.look);
+      roll = flight.roll;
+    } else {
+      pos.copy(logical.pos);
+      look.copy(logical.look);
+      pointer.x += (pointerTarget.x - pointer.x) * 0.05;
+      pointer.y += (pointerTarget.y - pointer.y) * 0.05;
+      const idle = reduced ? 0 : now * 0.00022;
+      const side = new THREE.Vector3().subVectors(look, pos).cross(new THREE.Vector3(0, 1, 0));
+      if (side.lengthSq() > 0.0001) side.normalize();
+      const up = new THREE.Vector3(0, 1, 0);
+      pos.addScaledVector(side, pointer.x * 0.42 + Math.sin(idle) * 0.06);
+      pos.addScaledVector(up, pointer.y * 0.22 + Math.cos(idle * 0.8) * 0.04);
+      look.addScaledVector(side, pointer.x * 0.16);
+      look.y += pointer.y * 0.06;
+    }
 
-    pointer.x += (pointerTarget.x - pointer.x) * 0.05;
-    pointer.y += (pointerTarget.y - pointer.y) * 0.05;
-    const idle = reduced ? 0 : now * 0.00022;
-    const side = new THREE.Vector3().subVectors(look, pos).cross(new THREE.Vector3(0, 1, 0));
-    if (side.lengthSq() > 0.0001) side.normalize();
-    const up = new THREE.Vector3(0, 1, 0);
-    pos.addScaledVector(side, pointer.x * 0.42 + Math.sin(idle) * 0.06);
-    pos.addScaledVector(up, pointer.y * 0.22 + Math.cos(idle * 0.8) * 0.04);
-    look.addScaledVector(side, pointer.x * 0.16);
-    look.y += pointer.y * 0.06;
-
+    camera.up.set(Math.sin(roll), Math.cos(roll), 0);
     camera.position.copy(pos);
     camera.lookAt(look);
+    const fov = intro < 0.999 ? 48 - smoother(clamp01((intro - 0.4) / 0.45)) * 6 : 42;
+    if (Math.abs(camera.fov - fov) > 0.05) {
+      camera.fov = fov;
+      camera.updateProjectionMatrix();
+    }
+    camera.updateMatrixWorld(true);
     poseNow = { pos: pos.clone(), look: look.clone() };
 
     applyAtmosphere(fromI, toI, mix);
-    const introK = introEase(clamp01(intro));
-    scene.fog.near = 18 + (1 - introK) * 26;
-    scene.fog.far = 48 + (1 - introK) * 60;
+    if (intro < 0.999) {
+      const u = clamp01(intro);
+      const clear = smoother(clamp01((u - 0.28) / 0.55));
+      scene.background.copy(chaosColor).lerp(bgColor, clear);
+      scene.fog.color.copy(chaosColor).lerp(fogColor, clear);
+      scene.fog.near = 6 + clear * 12;
+      scene.fog.far = 26 + clear * 26;
+      rift.update(u, now * 0.001);
+    } else {
+      scene.fog.near = 18;
+      scene.fog.far = 48;
+      if (rift.group.visible) rift.group.visible = false;
+    }
+    if (!reduced && intro > 0.97) {
+      const live = travel ? [travel.from, travel.to] : [shown];
+      live.forEach((i) => motifs[i].tick(now * 0.001));
+    }
     present(now);
 
     if (!sceneRT) resize();
@@ -718,6 +748,105 @@ export function createWorld(canvas) {
     renderer.setRenderTarget(null);
     renderer.render(scene, camera);
     cssRenderer.render(cssScene, camera);
+    if (intro > 0.97 && !travel) {
+      const viewW = canvas.clientWidth || window.innerWidth;
+      const viewH = canvas.clientHeight || window.innerHeight;
+      const key = shown + "@" + Math.round(viewW) + "x" + Math.round(viewH);
+      if (placedKey !== key && viewW > 0 && viewH > 0) {
+        positionMotif(shown, viewW, viewH);
+        placedKey = key;
+      }
+    }
+  }
+
+  function contentRects(card) {
+    const rects = [];
+    card.planes.forEach((p) => {
+      if (p.el.style.visibility === "hidden") return;
+      const r = p.el.getBoundingClientRect();
+      if (r.width > 8 && r.height > 8) rects.push(r);
+    });
+    const plate = card.plate.getBoundingClientRect();
+    if (plate.width > 8 && plate.height > 8 && card.plate.style.visibility !== "hidden") rects.push(plate);
+    return rects;
+  }
+
+  function screenToLocal(px, py, viewW, viewH, anchor) {
+    ndc.set((px / viewW) * 2 - 1, -(py / viewH) * 2 + 1, 0.5);
+    ndc.unproject(camera);
+    rayDir.copy(ndc).sub(camera.position);
+    const planeZ = anchor.z - 0.75;
+    const t = (planeZ - camera.position.z) / (rayDir.z || -0.0001);
+    return camera.position.clone().addScaledVector(rayDir, t).sub(anchor);
+  }
+
+  function findPocket(rects, spec, viewW, viewH) {
+    const top = document.querySelector(".topbar");
+    const dock = document.querySelector(".dock");
+    const meter = document.querySelector(".meter");
+    const y0 = (top ? top.getBoundingClientRect().bottom : 56) + 8;
+    const y1 = (dock ? dock.getBoundingClientRect().top : viewH - 72) - 8;
+    const x1 = (meter ? meter.getBoundingClientRect().left : viewW - 28) - 8;
+    const sx = viewW / 1920;
+    const sy = viewH / 1080;
+    let best = null;
+    for (let shrink = 1; shrink >= 0.62; shrink -= 0.08) {
+      const ww = spec.w * sx * shrink;
+      const hh = spec.h * sy * shrink;
+      const step = Math.max(12, 18 * sx);
+      for (let y = y0; y + hh <= y1; y += step) {
+        for (let x = 10; x + ww <= x1; x += step) {
+          if (pocketHits(rects, x, y, ww, hh)) continue;
+          const score = pocketScore(spec.bias, x, y, ww, hh, viewW, viewH);
+          if (!best || score > best.score) best = { x, y, w: ww, h: hh, score };
+        }
+      }
+      if (best) return best;
+    }
+    return null;
+  }
+
+  function pocketHits(rects, x, y, w, h) {
+    const pad = 18;
+    for (let i = 0; i < rects.length; i += 1) {
+      const b = rects[i];
+      if (x < b.right + pad && x + w > b.left - pad && y < b.bottom + pad && y + h > b.top - pad) return true;
+    }
+    return false;
+  }
+
+  function pocketScore(bias, x, y, w, h, viewW, viewH) {
+    const cx = (x + w / 2) / viewW;
+    const cy = (y + h / 2) / viewH;
+    if (bias === "top") return (1 - cy) * 4 + (1 - cx) * 0.2;
+    if (bias === "left") return (1 - cx) * 4 + (1 - Math.abs(cy - 0.45));
+    if (bias === "right") return cx * 3 + (1 - Math.abs(cy - 0.5));
+    if (bias === "lowleft") return cy * 2.2 + (1 - cx) * 1.6;
+    if (bias === "mid") return 2 - Math.abs(cx - 0.52) * 2 - Math.abs(cy - 0.48);
+    return 1 - cy;
+  }
+
+  function positionMotif(i, viewW, viewH) {
+    const group = motifs[i].group;
+    const rects = contentRects(cards[i]);
+    if (rects.length < 2) {
+      group.visible = false;
+      return;
+    }
+    const pocket = findPocket(rects, MOTIF_SPECS[i], viewW, viewH);
+    if (!pocket) {
+      group.visible = false;
+      return;
+    }
+    const anchor = cards[i].anchor;
+    const center = screenToLocal(pocket.x + pocket.w / 2, pocket.y + pocket.h / 2, viewW, viewH, anchor);
+    const right = screenToLocal(pocket.x + pocket.w, pocket.y + pocket.h / 2, viewW, viewH, anchor);
+    const down = screenToLocal(pocket.x + pocket.w / 2, pocket.y + pocket.h, viewW, viewH, anchor);
+    const span = motifs[i].span;
+    const fit = Math.min(Math.abs(right.x - center.x) * 2 / span.w, Math.abs(down.y - center.y) * 2 / span.h) * 0.78;
+    group.position.set(center.x, center.y, -0.75);
+    group.scale.setScalar(Math.max(0.02, fit));
+    group.visible = true;
   }
 
   document.fonts.ready.then(() => {
@@ -779,18 +908,25 @@ function poseFor(i) {
   };
 }
 
-function introPose() {
-  const settled = poseFor(0);
-  const away = settled.pos.clone().sub(settled.look);
-  if (away.lengthSq() < 0.0001) away.set(0, 0, 1);
-  away.normalize();
-  const side = new THREE.Vector3(away.z, 0, -away.x).normalize();
+function introFlight(u) {
+  const anchor = anchorOf(0);
+  const end = poseFor(0).pos.clone().sub(anchor);
+  const keys = [
+    { u: 0, p: new THREE.Vector3(1.6, 4.6, 32), l: new THREE.Vector3(0, 1.5, 16), roll: 0.24 },
+    { u: 0.2, p: new THREE.Vector3(-2.1, 2.8, 25), l: new THREE.Vector3(0.15, 0.9, 9), roll: -0.16 },
+    { u: 0.46, p: new THREE.Vector3(0.7, 1.45, 19.2), l: new THREE.Vector3(0, 0.4, 2), roll: 0.09 },
+    { u: 0.68, p: new THREE.Vector3(-0.2, 0.62, 15.4), l: new THREE.Vector3(0, 0.14, 0), roll: -0.03 },
+    { u: 1, p: end, l: new THREE.Vector3(0, 0, 0), roll: 0 }
+  ];
+  let i = 0;
+  while (i < keys.length - 2 && u > keys[i + 1].u) i += 1;
+  const a = keys[i];
+  const b = keys[i + 1];
+  const t = smoother(clamp01((u - a.u) / Math.max(0.0001, b.u - a.u)));
   return {
-    pos: settled.pos.clone()
-      .addScaledVector(away, 12.5)
-      .addScaledVector(side, 4.6)
-      .add(new THREE.Vector3(0, 7.4, 0)),
-    look: settled.look.clone().add(new THREE.Vector3(0, 1.35, 0))
+    pos: anchor.clone().add(a.p.clone().lerp(b.p, t)),
+    look: anchor.clone().add(a.l.clone().lerp(b.l, t)),
+    roll: a.roll + (b.roll - a.roll) * t
   };
 }
 
@@ -1011,7 +1147,7 @@ function hall(g, r) {
 function loft(g, r) {
   for (let n = 0; n < 5; n += 1) {
     const beam = new THREE.Mesh(new THREE.BoxGeometry(16, 0.16, 0.16), mat(0x8aa0b0, 0.35, 0.7));
-    add(g, beam, 0, 4.55, -3.4 + n * 1.15);
+    add(g, beam, 0, 6.15, -3.4 + n * 1.15);
   }
   const pier = new THREE.Mesh(new THREE.BoxGeometry(0.45, 4.6, 0.45), mat(0x66727c, 0.6, 0.2));
   add(g, pier, -10.2, -1.2, 1.4);
