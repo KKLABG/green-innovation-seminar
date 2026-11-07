@@ -1132,8 +1132,9 @@ body.is-spatial .sheet .cmp-label {
 }
 .plane h2 {
   margin: 0 0 6px;
+  padding-top: 0.16em;
   font-size: 44px;
-  line-height: 1.28;
+  line-height: 1.4;
   letter-spacing: 0.04em;
 }
 .plane h3 {
@@ -1159,6 +1160,7 @@ body.is-spatial .sheet .cmp-label {
 }
 .plane-quote .pull {
   margin: 0;
+  padding-top: 0.12em;
   font-size: 36px;
   line-height: 1.35;
   letter-spacing: 0.02em;

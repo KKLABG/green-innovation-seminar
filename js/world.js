@@ -249,25 +249,31 @@ export function createWorld(canvas) {
   sheets.forEach((sheet) => sandbox.appendChild(sheet));
 
   function measurePlane(p) {
-    p.el.style.position = "relative";
-    p.el.style.width = p.width + "px";
-    p.el.style.height = "auto";
-    p.el.style.maxHeight = "none";
-    p.el.style.overflow = "visible";
-    p.el.style.boxSizing = "border-box";
-    p.el.style.background = "transparent";
-    const natural = Math.max(p.el.scrollHeight, p.el.offsetHeight, 1);
+    const el = p.el;
+    el.style.paddingTop = "";
+    el.style.paddingBottom = "";
+    el.style.position = "relative";
+    el.style.width = p.width + "px";
+    el.style.height = "auto";
+    el.style.maxHeight = "none";
+    // Hidden overflow stops child margins from collapsing out of the box.
+    // Measuring while overflow is visible drops that margin, then the next
+    // line is placed on top of the text that no longer fits.
+    el.style.overflow = "hidden";
+    el.style.boxSizing = "border-box";
+    el.style.background = "transparent";
+    const natural = Math.max(el.offsetHeight, 1);
     if (p.scroll && p.maxH && natural > p.maxH) {
-      p.el.style.height = p.maxH + "px";
-      p.el.style.overflowY = "auto";
+      el.style.height = p.maxH + "px";
+      el.style.overflowY = "auto";
       p.pixelH = p.maxH;
     } else {
-      p.el.style.height = natural + "px";
-      p.el.style.overflow = "hidden";
-      p.pixelH = natural;
+      el.style.height = natural + "px";
+      el.style.overflow = "hidden";
+      p.pixelH = el.offsetHeight;
     }
     p.pixelW = p.width;
-    p.el.style.position = "absolute";
+    el.style.position = "absolute";
   }
 
   const blurMat = new THREE.ShaderMaterial({
@@ -472,6 +478,12 @@ export function createWorld(canvas) {
 
   function layoutCards() {
     const { textScale, visW, visH } = metrics;
+    const viewH = canvas.clientHeight || window.innerHeight || 1;
+    const px = visH / viewH;
+    const chromeTop = 52;
+    const chromeBottom = 80;
+    const safeH = Math.max(visH * 0.5, visH - (chromeTop + chromeBottom) * px);
+    const shiftUp = ((chromeBottom - chromeTop) / 2) * px;
     cards.forEach((card, i) => {
       arrangePlanes(i, card.planes);
       const bounds = clusterBounds(card.planes);
@@ -479,13 +491,13 @@ export function createWorld(canvas) {
       const needW = bounds.w + gapPx + card.plateW;
       const needH = Math.max(bounds.h, card.plateH);
       const fitW = (visW * 0.9) / (needW * textScale);
-      const fitH = (visH * 0.8) / (needH * textScale);
+      const fitH = Math.min(visH * 0.8, safeH) / (needH * textScale);
       const fit = Math.min(1, fitW, fitH);
       card.fit = fit;
       const s = textScale * fit;
       card.layoutScale = s;
       card.planes.forEach((p) => {
-        p.obj.position.set((p.cx - bounds.cx) * s, -(p.cy - bounds.cy) * s, p.z);
+        p.obj.position.set((p.cx - bounds.cx) * s, -(p.cy - bounds.cy) * s + shiftUp, p.z);
         p.obj.scale.setScalar(s);
       });
       const clusterHalf = bounds.w * s / 2;
@@ -501,7 +513,7 @@ export function createWorld(canvas) {
       const shift = -(left + right) / 2;
       card.planes.forEach((p) => { p.obj.position.x += shift; });
       photoX += shift;
-      card.plateObj.position.set(photoX, photoY, photoZ);
+      card.plateObj.position.set(photoX, photoY + shiftUp, photoZ);
       card.plateObj.scale.setScalar(s);
       if (card.pedestal) {
         card.pedestal.position.x = photoX;
